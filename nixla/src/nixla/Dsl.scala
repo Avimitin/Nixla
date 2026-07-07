@@ -51,6 +51,48 @@ object dsl:
   inline def fn[R](inline f: (Ref, Ref, Ref, Ref) => R)(using tn: ToNix[R]): Nix[NAny] =
     ${ FnMacros.impl4('f, 'tn) }
 
+  /** Nix quasiquote, parsed at Scala compile time by nixla's own parser.
+    *
+    *   nixq"""{ pkgs ? import <nixpkgs> { } }: ${shell}"""
+    *
+    * `${…}` is a Scala splice (any ToNix value); write `$${…}` for a literal
+    * Nix interpolation. Syntax errors — and splices in impossible positions —
+    * are Scala compile errors.
+    */
+  extension (inline sc: StringContext)
+    inline def nixq(inline args: Any*): Nix[NAny] = ${ NixQMacro.impl('sc, 'args) }
+
+private[nixla] object NixQMacro:
+  import nixla.cst.ParseError
+
+  def impl(sc: Expr[StringContext], args: Expr[Seq[Any]])(using Quotes): Expr[Nix[NAny]] =
+    import quotes.reflect.*
+    val parts: List[String] = sc match
+      case '{ StringContext(${ Varargs(ps) }*) } => ps.toList.map(_.valueOrAbort)
+      case _ => report.errorAndAbort("nixq must be applied to a literal string interpolation")
+
+    // stage 1 of the meta compiler: OUR parser runs inside scalac
+    try NixQ.validate(parts)
+    catch
+      case e: ParseError => report.errorAndAbort(s"nixq: ${e.render(NixQ.skeletonOf(parts))}")
+      case e: GraftError => report.errorAndAbort(e.getMessage)
+
+    val spliceExprs: List[Expr[cst.GreenNode]] = args match
+      case Varargs(as) =>
+        as.toList.map { a =>
+          a.asTerm.tpe.widen.asType match
+            case '[t] =>
+              val at = a.asExprOf[t]
+              Expr.summon[ToNix[t]] match
+                case Some(tn) => '{ $tn.toNix($at).green }
+                case None =>
+                  report.errorAndAbort(
+                    s"nixq splice: no ToNix[${Type.show[t]}] instance for this value", a)
+        }
+      case _ => report.errorAndAbort("nixq: unexpected splice arguments")
+
+    '{ NixQ.graft(${ Expr(parts) }, ${ Expr.ofList(spliceExprs) }) }
+
 private[nixla] object FnMacros:
 
   def pattern(names: List[String], body: GreenNode): Nix[NAny] =

@@ -22,6 +22,10 @@ sealed trait NFn[-A <: NAny, +B <: NAny] extends NAny
 final case class Nix[+T <: NAny](green: GreenNode):
   /** deterministic canonical source (Pretty) */
   def render: String = Pretty(green)
+  /** verbatim source — meaningful for parsed/quasiquoted trees, where the
+    * skeleton's original bytes (comments, layout) are preserved
+    */
+  def text: String = green.text
 
 object Nix:
   def raw(green: GreenNode): Nix[NAny] = Nix[NAny](green)
