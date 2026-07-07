@@ -143,17 +143,20 @@ Scala compiler ─▶ nixla parser ─▶ deterministic emit ─▶ Nix CLI
 ## Milestones
 
 - **M1 — CST core**: green/red trees, lexer, parser rewrite, lossless
-  property test. *(in progress)*
+  property test. ✅
 - **M2 — parser completion**: interpolated paths (`./a/${b}`), contextual
-  `or`, remaining float/path edge cases, better error messages.
-- **M3 — emit**: `pretty` canonical printer, graft-aware rendering; port the
-  old emitter's precedence logic; delete legacy AST parser/emitter at parity.
+  `or`, trailing-slash/comment errors, better messages. ✅
+- **M3 — emit**: `pretty` canonical printer, views, builders with
+  precedence-correct auto-parens; legacy AST deleted at parity. ✅
 - **M4 — typed layer**: `Nix[T]`, `Ref`/`Dynamic`, `fn` macro, `ToNix`
-  derivation.
-- **M5 — quasiquotes**: `nixq` macro over M1–M4.
-- **M6 — testkit**: Nix-CLI fixtures. **TODO** (deferred by decision):
-  differential fuzzing of parser/emitter against `nix-instantiate --parse`
-  with generated ASTs and nixpkgs corpora.
+  derivation (case classes + named tuples). ✅
+- **M5 — quasiquotes**: `nixq` macro over M1–M4; compile-time parse, four
+  graft positions, `$${}` escape, dry-run positional validation. ✅
+- **M6 — testkit**: `NixCli` parse/eval gates, `Nix#check()`. ✅
+  **TODO** (deferred by decision #4): differential fuzzing of parser/emitter
+  against `nix-instantiate --parse` with generated ASTs and nixpkgs corpora.
+  **TODO**: indent-aware graft rendering (grafts currently render at column
+  0); per-position splice typing (expression vs string vs attr name).
 
 ## Decision log
 
