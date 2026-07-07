@@ -1,0 +1,7 @@
+out/
+.bsp/
+.metals/
+.bloop/
+.scala-build/
+.direnv/
+result
