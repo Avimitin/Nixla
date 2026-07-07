@@ -45,6 +45,8 @@ $ mill nixla.run > demo.out   # then feed sections to:
 $ nix-instantiate --parse <file>.nix
 ```
 
+See [DESIGN.md](./DESIGN.md) for the architecture, layer model, and decision log.
+
 ## Status / roadmap
 
 - [x] AST covering the full expression language
