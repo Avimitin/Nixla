@@ -1,11 +1,11 @@
 package build
-import mill._, scalalib._
+import mill.*, scalalib.*
 
 object scalanix extends ScalaModule {
   def scalaVersion = "3.3.6"
   def mainClass    = Some("scalanix.demo")
 
-  object test extends ScalaTests with TestModule.Munit {
-    def ivyDeps = Agg(ivy"org.scalameta::munit:1.1.1")
+  object test extends ScalaTests, TestModule.Munit {
+    def mvnDeps = Seq(mvn"org.scalameta::munit:1.1.1")
   }
 }

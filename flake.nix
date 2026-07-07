@@ -1,7 +1,7 @@
 {
   description = "scala-nix: write Nix in Scala 3 — AST, parser, and emitter";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 
   outputs = { self, nixpkgs }:
     let
