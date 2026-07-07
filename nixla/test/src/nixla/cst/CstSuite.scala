@@ -106,6 +106,46 @@ class CstSuite extends munit.FunSuite:
     assert(e.render("let x = 1;\nin x ++ ").contains("2:"), e.render("let x = 1;\nin x ++ "))
   }
 
+  // ---- M2: parser completion ------------------------------------------
+
+  test("lossless: interpolated paths") {
+    List("./foo/${x}/bar", "./a${x}", "./${x}", "~/dots/${name}", "/abs/${x}",
+      "./foo/${x}.conf", "1.5/${v}", "src/${pname}-${version}")
+      .foreach(lossless)
+  }
+
+  test("structure: interpolated path is one N_PATH with N_INTERP children") {
+    val root = Parser.parse("./foo/${x}/bar")
+    val p    = root.childNodes.head
+    assertEquals(p.kind, N_PATH)
+    assertEquals(p.childNodes.map(_.kind), Vector(N_INTERP))
+    assertEquals(p.text, "./foo/${x}/bar")
+  }
+
+  test("paths: trailing slash is an error (as in nix)") {
+    intercept[ParseError](Parser.parseGreen("./foo/"))
+    intercept[ParseError](Parser.parseGreen("x = /a/b/;"))
+    intercept[ParseError](Parser.parseGreen("./a/${x}/")) // trailing after interp
+    lossless("./a/${x}")                                   // but ending on interp is fine
+  }
+
+  test("legacy: `f or` applies `or` as an identifier") {
+    lossless("f or")
+    assertEquals(Parser.parse("f or").childNodes.head.kind, N_APPLY)
+    lossless("a.b or c") // still the select default, not application
+    assertEquals(Parser.parse("a.b or c").childNodes.head.kind, N_SELECT)
+  }
+
+  test("errors: unterminated block comment") {
+    val e = intercept[ParseError](Parser.parseGreen("1 + /* no end"))
+    assert(e.getMessage.contains("unterminated comment"))
+  }
+
+  test("errors: messages name the found token") {
+    val e = intercept[ParseError](Parser.parseGreen("{ a = 1 }"))
+    assert(e.getMessage.contains("';'") && e.getMessage.contains("'}'"), e.getMessage)
+  }
+
   test("red tree: spans and find") {
     val root = Parser.parse("{ a = 12; }")
     val n    = root.find(6) // inside `12`

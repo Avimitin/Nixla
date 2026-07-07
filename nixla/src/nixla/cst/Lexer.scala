@@ -22,14 +22,16 @@ object Lexer:
     "in" -> TK_KW_IN, "rec" -> TK_KW_REC, "inherit" -> TK_KW_INHERIT,
     "or" -> TK_KW_OR)
 
+  private val reComment = Pattern.compile("""(?s)#[^\n\r]*|/\*.*?\*/""")
+
   // regexes transcribed from nix's lexer.l (order here = tie-break priority)
   private val table: List[(Pattern, SyntaxKind)] = List(
     Pattern.compile("""[ \t\r\n]+""")                                   -> TK_WHITESPACE,
-    Pattern.compile("""(?s)#[^\n\r]*|/\*.*?\*/""")                      -> TK_COMMENT,
+    reComment                                                           -> TK_COMMENT,
     Pattern.compile("""(([1-9][0-9]*\.[0-9]*)|(0?\.[0-9]+))([Ee][+-]?[0-9]+)?""") -> TK_FLOAT,
     Pattern.compile("""[0-9]+""")                                       -> TK_INT,
-    Pattern.compile("""[a-zA-Z0-9._+\-]*(/[a-zA-Z0-9._+\-]+)+""")       -> TK_PATH,
-    Pattern.compile("""~(/[a-zA-Z0-9._+\-]+)+""")                       -> TK_HPATH,
+    Pattern.compile("""[a-zA-Z0-9._+\-]*(/[a-zA-Z0-9._+\-]+)+/?""")     -> TK_PATH,
+    Pattern.compile("""~(/[a-zA-Z0-9._+\-]+)+/?""")                     -> TK_HPATH,
     Pattern.compile("""<[a-zA-Z0-9._+\-]+(/[a-zA-Z0-9._+\-]+)*>""")     -> TK_SPATH,
     Pattern.compile("""[a-zA-Z][a-zA-Z0-9+.\-]*:[a-zA-Z0-9%/?:@&=+$,_.!~*'\-]+""") -> TK_URI,
     Pattern.compile("""[a-zA-Z_][a-zA-Z0-9_'\-]*""")                    -> TK_IDENT)
@@ -49,6 +51,12 @@ object Lexer:
     case Default(depth: Int)
     case Str
     case IndStr
+    case InPath // inside an interpolated path: ./a/${x}/b
+
+  // path continuation pieces after an interpolation
+  private val rePathCont = Pattern.compile("""[a-zA-Z0-9._+\-/]+""")
+  // path-segment start immediately followed by ${ : ./${x}, ~/${x}, /${x}
+  private val rePathSeg  = Pattern.compile("""(~?[a-zA-Z0-9._+\-]*)/""")
 
   def lex(src: String): Vector[Token] =
     import Frame.*
@@ -64,7 +72,13 @@ object Lexer:
     def startsWith(s: String): Boolean = src.startsWith(s, pos)
 
     def lexDefault(depth: Int): Unit =
-      if startsWith("${") then {
+      if startsWith("/*") then {
+        // must be a (terminated) comment; the table would silently mis-lex `/*` as division
+        val m = reComment.matcher(src)
+        m.region(pos, src.length)
+        if !m.lookingAt() then err("unterminated comment")
+        emit(TK_COMMENT, src.substring(pos, m.end))
+      } else if startsWith("${") then {
         emit(TK_INTERP_OPEN, "${")
         stack = Default(0) :: stack
       } else if startsWith("''") then {
@@ -85,6 +99,12 @@ object Lexer:
           stack = stack.tail
         } else err("unbalanced '}'")
       } else {
+        // path segment directly followed by ${ starts an interpolated path:
+        // ./${x}, ~/${x}, /${x}, ./a/${x}
+        val seg = rePathSeg.matcher(src)
+        seg.region(pos, src.length)
+        val segHit = seg.lookingAt() && src.startsWith("${", seg.end)
+
         // longest match across the regex table, ties broken by table order
         var bestLen  = 0
         var bestKind = TK_EOF
@@ -96,14 +116,28 @@ object Lexer:
             bestKind = kind
           }
         }
-        val opHit = operators.find((s, _) => startsWith(s))
-        opHit match
-          case Some((s, k)) if s.length >= bestLen => emit(k, s)
-          case _ if bestLen > 0 =>
-            val text = src.substring(pos, pos + bestLen)
-            val kind = if bestKind == TK_IDENT then keywords.getOrElse(text, TK_IDENT) else bestKind
-            emit(kind, text)
-          case _ => err(s"unexpected character '${src(pos)}'")
+
+        if segHit && seg.end - pos >= bestLen then {
+          emit(TK_PATH, src.substring(pos, seg.end))
+          stack = InPath :: stack
+        } else if (bestKind == TK_PATH || bestKind == TK_HPATH) &&
+          src.startsWith("${", pos + bestLen)
+        then {
+          // path token flowing straight into an interpolation: ./a${x}
+          emit(bestKind, src.substring(pos, pos + bestLen))
+          stack = InPath :: stack
+        } else {
+          val opHit = operators.find((s, _) => startsWith(s))
+          opHit match
+            case Some((s, k)) if s.length >= bestLen => emit(k, s)
+            case _ if bestLen > 0 =>
+              val text = src.substring(pos, pos + bestLen)
+              if (bestKind == TK_PATH || bestKind == TK_HPATH) && text.endsWith("/") then
+                err("path has a trailing slash")
+              val kind = if bestKind == TK_IDENT then keywords.getOrElse(text, TK_IDENT) else bestKind
+              emit(kind, text)
+            case _ => err(s"unexpected character '${src(pos)}'")
+        }
       }
 
     def lexStr(): Unit =
@@ -155,11 +189,32 @@ object Lexer:
         stack = Frame.Default(0) :: stack
       }
 
+    def lexInPath(): Unit =
+      if startsWith("${") then {
+        emit(TK_INTERP_OPEN, "${")
+        stack = Default(0) :: stack
+      } else {
+        val m = rePathCont.matcher(src)
+        m.region(pos, src.length)
+        if m.lookingAt() && m.end > pos then emit(TK_PATH, src.substring(pos, m.end))
+        else endPath()
+      }
+
+    def endPath(): Unit =
+      stack = stack.tail
+      out.lastOption match
+        case Some(t) if t.kind == TK_PATH && t.text.endsWith("/") =>
+          err("path has a trailing slash")
+        case _ => ()
+
     while pos < src.length do
       stack.head match
         case Default(d) => lexDefault(d)
         case Str        => lexStr()
         case IndStr     => lexIndStr()
+        case InPath     => lexInPath()
+
+    while stack.head == InPath do endPath()
 
     stack match
       case Default(0) :: Nil => ()

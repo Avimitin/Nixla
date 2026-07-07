@@ -37,9 +37,12 @@ final class Parser private (tokens: Vector[Token]):
 
   private def bump(buf: Buf): Unit = { buf += green(cur); i += 1 }
 
+  private def found: String =
+    if cur.kind == SyntaxKind.TK_EOF then "end of input" else s"'${cur.text}'"
+
   private def expect(k: SyntaxKind, what: String, buf: Buf): Unit =
     absorb(buf)
-    if cur.kind != k then err(s"expected $what")
+    if cur.kind != k then err(s"expected $what, found $found")
     bump(buf)
 
   /** index of the next significant token at or after `from` */
@@ -278,6 +281,15 @@ final class Parser private (tokens: Vector[Token]):
         buf ++= tmp
         buf += parseSelect()
         l = node(N_APPLY, buf)
+      else if cur.kind == TK_KW_OR then
+        // legacy: `f or` applies the identifier `or` (contextual keyword)
+        val buf = ArrayBuffer.empty[GreenChild]
+        buf += l
+        buf ++= tmp
+        val id = ArrayBuffer.empty[GreenChild]
+        bump(id)
+        buf += node(N_IDENT, id)
+        l = node(N_APPLY, buf)
       else
         i = save
         going = false
@@ -349,7 +361,15 @@ final class Parser private (tokens: Vector[Token]):
       val buf = ArrayBuffer.empty[GreenChild]
       bump(buf)
       node(N_LITERAL, buf)
-    case TK_PATH | TK_HPATH | TK_SPATH =>
+    case TK_PATH | TK_HPATH =>
+      val buf = ArrayBuffer.empty[GreenChild]
+      bump(buf)
+      // interpolated path pieces are adjacent by lexer construction — no
+      // trivia can separate them, so no absorb here
+      while cur.kind == TK_PATH || cur.kind == TK_INTERP_OPEN do
+        if cur.kind == TK_PATH then bump(buf) else buf += parseInterp()
+      node(N_PATH, buf)
+    case TK_SPATH =>
       val buf = ArrayBuffer.empty[GreenChild]
       bump(buf)
       node(N_PATH, buf)
