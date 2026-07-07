@@ -1,4 +1,4 @@
-package scalanix
+package nixla
 
 import scala.language.implicitConversions
 import dsl.{*, given}

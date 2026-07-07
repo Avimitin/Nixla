@@ -1,5 +1,5 @@
 {
-  description = "scala-nix: write Nix in Scala 3 — AST, parser, and emitter";
+  description = "nixla (Nix + Scala): write Nix in Scala 3 — AST, parser, and emitter";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 

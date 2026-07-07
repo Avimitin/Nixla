@@ -1,4 +1,4 @@
-package scalanix
+package nixla
 
 /** The core Nix expression AST. This is the load-bearing type of the whole
   * pipeline: the parser produces it, the DSL builds it, the emitter consumes it.

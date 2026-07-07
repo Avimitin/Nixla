@@ -1,9 +1,9 @@
 package build
 import mill.*, scalalib.*
 
-object scalanix extends ScalaModule {
+object nixla extends ScalaModule {
   def scalaVersion = "3.3.6"
-  def mainClass    = Some("scalanix.demo")
+  def mainClass    = Some("nixla.demo")
 
   object test extends ScalaTests, TestModule.Munit {
     def mvnDeps = Seq(mvn"org.scalameta::munit:1.1.1")

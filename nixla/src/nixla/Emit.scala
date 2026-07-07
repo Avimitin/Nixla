@@ -1,4 +1,4 @@
-package scalanix
+package nixla
 
 import NixExpr.*, StrPart.*, Binding.*, Param.*
 
